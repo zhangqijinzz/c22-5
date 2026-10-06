@@ -3,6 +3,7 @@ import type { ModuleId } from './models/ruleModel';
 import { FieldsView } from './features/fields/FieldsView';
 import { RulesView } from './features/rules/RulesView';
 import { SamplesView } from './features/samples/SamplesView';
+import { RegressionView } from './features/regression/RegressionView';
 import { InspectionView } from './features/inspection/InspectionView';
 import { createRuleWeaveViewModels } from './viewmodels/createRuleWeaveViewModels';
 import './styles.css';
@@ -11,12 +12,13 @@ const navigation: { id: ModuleId; label: string; description: string; icon: stri
   { id: 'fields', label: '字段定义', description: '输入与合法范围', icon: '▤', step: '01' },
   { id: 'rules', label: '规则工作台', description: '条件与决策结果', icon: '⌘', step: '02' },
   { id: 'samples', label: '样例试验区', description: '单点命中推演', icon: '◉', step: '03' },
-  { id: 'inspection', label: '检查与版本', description: '覆盖、冲突与快照', icon: '⌕', step: '04' },
+  { id: 'regression', label: '回归集合', description: '批量命中回归', icon: '◷', step: '04' },
+  { id: 'inspection', label: '检查与版本', description: '覆盖、冲突与快照', icon: '⌕', step: '05' },
 ];
 
 export default function App() {
   const [viewModels] = useState(createRuleWeaveViewModels);
-  const { workspace, fields, rules, samples, inspection } = viewModels;
+  const { workspace, fields, rules, samples, regression, inspection } = viewModels;
   const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
   const project = state.project;
   const activeNavigation = navigation.find((item) => item.id === state.activeModule) ?? navigation[0];
@@ -61,7 +63,8 @@ export default function App() {
           <div id="module-panel" className="module-tab-panel" role="tabpanel" aria-labelledby={`module-tab-${state.activeModule}`}>
             {state.activeModule === 'fields' && <FieldsView state={state} viewModel={fields} />}
             {state.activeModule === 'rules' && <RulesView state={state} viewModel={rules} />}
-            {state.activeModule === 'samples' && <SamplesView state={state} viewModel={samples} />}
+            {state.activeModule === 'samples' && <SamplesView state={state} viewModel={samples} onSaveRegressionCase={(name) => regression.addCaseFromSamples(name)} />}
+            {state.activeModule === 'regression' && <RegressionView state={state} viewModel={regression} />}
             {state.activeModule === 'inspection' && <InspectionView state={state} viewModel={inspection} onOpenRule={openRule} />}
           </div>
         </div>}

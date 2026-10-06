@@ -1,18 +1,21 @@
+import { useState } from 'react';
 import type { RuleField } from '../../models/ruleModel';
 import type { WorkspaceState } from '../../viewmodels/workspaceViewModel';
 import type { SamplesViewModel } from './samplesViewModel';
 
-interface SamplesViewProps { state: WorkspaceState; viewModel: SamplesViewModel }
+interface SamplesViewProps { state: WorkspaceState; viewModel: SamplesViewModel; onSaveRegressionCase?: (name: string) => void }
 
-export function SamplesView({ state, viewModel }: SamplesViewProps) {
+export function SamplesView({ state, viewModel, onSaveRegressionCase }: SamplesViewProps) {
   const project = state.project;
   const evaluation = state.sampleEvaluation;
   const fields = project?.fields ?? [];
   const rules = project?.rules ?? [];
+  const [caseName, setCaseName] = useState('');
   return (
     <section className="module-page">
-      <div className="page-heading"><div><span className="eyebrow">模块 03 / 输入推演</span><h1>样例试验区</h1><p>输入一组具体值，观察所有命中规则及最终采用的结果。</p></div><button className="button button-primary" disabled={!fields.length || !rules.length} onClick={() => viewModel.evaluate()}>运行样例 <span>↗</span></button></div>
+      <div className="page-heading"><div><span className="eyebrow">模块 03 / 输入推演</span><h1>样例试验区</h1><p>输入一组具体值，观察所有命中规则及最终采用的结果。</p></div><div className="button-row"><button className="button button-outline" disabled={!fields.length || !onSaveRegressionCase} title="把这组输入记入回归集合，长期保留" onClick={() => { onSaveRegressionCase?.(caseName); setCaseName(''); }}><span>◷</span> 存为回归用例</button><button className="button button-primary" disabled={!fields.length || !rules.length} onClick={() => viewModel.evaluate()}>运行样例 <span>↗</span></button></div></div>
       {!fields.length && <div className="inline-issue">定义字段后即可输入样例。</div>}
+      {fields.length > 0 && onSaveRegressionCase && <div className="sample-save-bar"><input aria-label="回归用例名称" value={caseName} placeholder="给这组输入起个名字（可选），点击“存为回归用例”长期保留" onChange={(event) => setCaseName(event.target.value)} /><span>非法输入也可以存，用于长期盯住边界场景</span></div>}
       <div className="sample-layout">
         <section className="sample-input-card card-surface">
           <header className="panel-heading"><div><span className="eyebrow">INPUT VALUES</span><h2>测试输入</h2></div><span className="count-chip">{fields.length} 个字段</span></header>

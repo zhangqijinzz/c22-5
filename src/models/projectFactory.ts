@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleProject, RuleVersion, WorkspaceDocument } from './ruleModel';
+import type { BusinessRule, RuleProject, RuleVersion, WorkspaceDocument, RegressionCase, RegressionRuleExpectation } from './ruleModel';
 
 export function createDemoWorkspace(): WorkspaceDocument {
   const fields: RuleProject['fields'] = [
@@ -24,22 +24,51 @@ export function createDemoWorkspace(): WorkspaceDocument {
       { kind: 'predicate', fieldId: 'cart-total', operator: 'gt', value: 5000 },
     ] }),
   ];
+  const regressionCases: RegressionCase[] = [
+    regressionCase('case-gold-large', '金卡会员大额订单', ['member-level', 'cart-total', 'coupon-active'],
+      { 'member-level': '金卡会员', 'cart-total': 1200, 'coupon-active': false },
+      [['rule-gold-discount', '金卡大额订单']], true, 1000),
+    regressionCase('case-coupon-stack', '优惠券与金卡权益叠加', ['member-level', 'cart-total', 'coupon-active'],
+      { 'member-level': '金卡会员', 'cart-total': 1600, 'coupon-active': true },
+      [['rule-gold-discount', '金卡大额订单'], ['rule-coupon-discount', '优惠券订单'], ['rule-gold-hidden', '金卡高额加赠']], true, 1000),
+    regressionCase('case-basic-no-discount', '普通会员小额订单', ['member-level', 'cart-total', 'coupon-active'],
+      { 'member-level': '普通会员', 'cart-total': 200, 'coupon-active': false },
+      [], true, 1000),
+    regressionCase('case-missing-level', '缺等级的输入', ['member-level', 'cart-total', 'coupon-active'],
+      { 'member-level': '', 'cart-total': 900, 'coupon-active': false },
+      [], false, 1000),
+  ];
   const project: RuleProject = {
     id: 'project-membership', title: '会员权益与折扣策略', fields, rules,
     sampleInputs: { 'member-level': '金卡会员', 'cart-total': 1200, 'coupon-active': true },
+    regressionCases,
     versions: [], updatedAt: Date.now(),
   };
   return { schemaVersion: 1, projects: [project], activeProjectId: project.id };
 }
 
+function regressionCase(
+  id: string,
+  name: string,
+  fieldIds: string[],
+  input: RegressionCase['input'],
+  expected: [string, string][],
+  expectValid: boolean,
+  createdAt: number,
+): RegressionCase {
+  const expectedRules: RegressionRuleExpectation[] = expected.map(([ruleId, ruleName]) => ({ id: ruleId, name: ruleName }));
+  return { id, name, fieldIds, input, expectValid, expectedRules, createdAt };
+}
+
 export function createBlankProject(ordinal: number): RuleProject {
-  return { id: makeId('project'), title: `未命名规则项目 ${ordinal}`, fields: [], rules: [], sampleInputs: {}, versions: [], updatedAt: Date.now() };
+  return { id: makeId('project'), title: `未命名规则项目 ${ordinal}`, fields: [], rules: [], sampleInputs: {}, regressionCases: [], versions: [], updatedAt: Date.now() };
 }
 
 export function createVersionSnapshot(project: RuleProject, name: string, frozen: boolean): RuleVersion {
   return {
     id: makeId('version'), name, savedAt: Date.now(), frozen,
     fields: cloneData(project.fields), rules: cloneData(project.rules), sampleInputs: cloneData(project.sampleInputs),
+    regressionCases: cloneData(project.regressionCases),
   };
 }
 

@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleField, RuleProject, RuleVersion, WorkspaceDocument } from '../models/ruleModel';
+import type { BusinessRule, RegressionCase, RuleField, RuleProject, RuleVersion, WorkspaceDocument } from '../models/ruleModel';
 import { defaultSample } from '../domain/conditionEvaluator';
 import { ProjectStorageService } from '../services/projectStorageService';
 
@@ -33,14 +33,16 @@ function decodeProject(value: unknown): RuleProject | null {
   const rules = value.rules.filter(isBusinessRule);
   if (fields.length !== value.fields.length || rules.length !== value.rules.length) return null;
   const versionsValue = Array.isArray(value.versions) ? value.versions : [];
-  const versions = versionsValue.filter(isRuleVersion);
+  const versions = versionsValue.map(decodeVersion).filter((version): version is RuleVersion => version !== null);
   if (versions.length !== versionsValue.length) return null;
+  const regressionCasesValue = Array.isArray(value.regressionCases) ? value.regressionCases : [];
   const project: RuleProject = {
     id: value.id,
     title: value.title,
     fields,
     rules,
     sampleInputs: isRecord(value.sampleInputs) ? value.sampleInputs as RuleProject['sampleInputs'] : defaultSample(fields),
+    regressionCases: regressionCasesValue.filter(isRegressionCase),
     versions,
     updatedAt: value.updatedAt,
   };
@@ -61,7 +63,22 @@ function isBusinessRule(value: unknown): value is BusinessRule {
     && isConditionGroup(value.conditions);
 }
 
-function isRuleVersion(value: unknown): value is RuleVersion {
+function decodeVersion(value: unknown): RuleVersion | null {
+  if (!isRuleVersion(value)) return null;
+  const regressionCases = Array.isArray(value.regressionCases) ? value.regressionCases.filter(isRegressionCase) : [];
+  return {
+    id: value.id,
+    name: value.name,
+    savedAt: value.savedAt,
+    frozen: value.frozen,
+    fields: value.fields,
+    rules: value.rules,
+    sampleInputs: value.sampleInputs,
+    regressionCases,
+  };
+}
+
+function isRuleVersion(value: unknown): value is Omit<RuleVersion, 'regressionCases'> & { regressionCases?: unknown } {
   return isRecord(value)
     && typeof value.id === 'string'
     && typeof value.name === 'string'
@@ -71,7 +88,21 @@ function isRuleVersion(value: unknown): value is RuleVersion {
     && value.fields.every(isRuleField)
     && Array.isArray(value.rules)
     && value.rules.every(isBusinessRule)
-    && isRecord(value.sampleInputs);
+    && isRecord(value.sampleInputs)
+    && (!Array.isArray(value.regressionCases) || value.regressionCases.every(isRegressionCase));
+}
+
+function isRegressionCase(value: unknown): value is RegressionCase {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && Array.isArray(value.fieldIds)
+    && value.fieldIds.every((fieldId) => typeof fieldId === 'string')
+    && isRecord(value.input)
+    && typeof value.expectValid === 'boolean'
+    && Array.isArray(value.expectedRules)
+    && value.expectedRules.every((rule) => isRecord(rule) && typeof rule.id === 'string' && typeof rule.name === 'string')
+    && typeof value.createdAt === 'number';
 }
 
 function isConditionGroup(value: unknown): value is BusinessRule['conditions'] {
