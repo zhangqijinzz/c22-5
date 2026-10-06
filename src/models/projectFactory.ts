@@ -27,13 +27,25 @@ export function createDemoWorkspace(): WorkspaceDocument {
   const project: RuleProject = {
     id: 'project-membership', title: '会员权益与折扣策略', fields, rules,
     sampleInputs: { 'member-level': '金卡会员', 'cart-total': 1200, 'coupon-active': true },
+    regressionCases: [
+      {
+        id: 'regression-demo-gold-coupon', name: '金卡 + 优惠券叠加', createdAt: Date.now(),
+        input: { 'member-level': '金卡会员', 'cart-total': 1200, 'coupon-active': true },
+        expectedRuleIds: ['rule-gold-discount', 'rule-coupon-discount'],
+      },
+      {
+        id: 'regression-demo-no-match', name: '普通会员小额无优惠', createdAt: Date.now(),
+        input: { 'member-level': '普通会员', 'cart-total': 100, 'coupon-active': false },
+        expectedRuleIds: [],
+      },
+    ],
     versions: [], updatedAt: Date.now(),
   };
   return { schemaVersion: 1, projects: [project], activeProjectId: project.id };
 }
 
 export function createBlankProject(ordinal: number): RuleProject {
-  return { id: makeId('project'), title: `未命名规则项目 ${ordinal}`, fields: [], rules: [], sampleInputs: {}, versions: [], updatedAt: Date.now() };
+  return { id: makeId('project'), title: `未命名规则项目 ${ordinal}`, fields: [], rules: [], sampleInputs: {}, regressionCases: [], versions: [], updatedAt: Date.now() };
 }
 
 export function createVersionSnapshot(project: RuleProject, name: string, frozen: boolean): RuleVersion {

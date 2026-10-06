@@ -1,10 +1,14 @@
-import { evaluateSample } from '../domain/conditionEvaluator';
+import { evaluateSample, matchesRule } from '../domain/conditionEvaluator';
 import { ruleDomain } from '../domain/ruleDomain';
+import { runRegressionSuite } from '../domain/regressionRunner';
 import type {
   ModuleId,
+  RegressionCase,
+  RegressionRunReport,
   RuleAnalysis,
   RuleProject,
   SampleEvaluation,
+  SampleInput,
   WorkspaceDocument,
 } from '../models/ruleModel';
 import { cloneData, createBlankProject, createDemoWorkspace, createVersionSnapshot, makeId } from '../models/projectFactory';
@@ -26,6 +30,7 @@ export interface WorkspaceState {
   analysis: RuleAnalysis | null;
   validationIssues: ReturnType<typeof ruleDomain.validateProject>;
   sampleEvaluation: SampleEvaluation | null;
+  regressionReport: RegressionRunReport | null;
   selectedRuleId?: string;
   notice: string;
   saveError?: string;
@@ -39,7 +44,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
   private state: WorkspaceState = {
     phase: 'loading', persistence: 'idle', workspace: null, project: null,
     activeModule: 'inspection', checkStatus: 'idle', analysis: null,
-    validationIssues: [], sampleEvaluation: null, notice: '正在恢复本地规则项目…',
+    validationIssues: [], sampleEvaluation: null, regressionReport: null, notice: '正在恢复本地规则项目…',
   };
   private readonly listeners = new Set<Listener>();
   private startPromise?: Promise<void>;
@@ -111,6 +116,61 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
     if (project) this.commitProject({ ...project, title }, '项目名称已更新', { recheck: false });
   }
 
+  addRegressionCase(input?: SampleInput): void {
+    const project = this.state.project;
+    if (!project) return;
+    const caseInput = cloneData(input ?? project.sampleInputs);
+    const expectedRuleIds = project.rules.filter((rule) => matchesRule(rule, caseInput)).map((rule) => rule.id);
+    const testCase: RegressionCase = {
+      id: makeId('regression'),
+      name: `回归用例 ${project.regressionCases.length + 1}`,
+      createdAt: Date.now(),
+      input: caseInput,
+      expectedRuleIds,
+    };
+    // replaceProject 会立刻重跑回归，新用例录入后即显示“保持一致/输入不合法”状态。
+    this.commitProject(
+      { ...project, regressionCases: [...project.regressionCases, testCase] },
+      `已记录“${testCase.name}”，记住当前 ${expectedRuleIds.length} 条命中规则`,
+      { recheck: false },
+    );
+  }
+
+  updateRegressionCase(caseId: string, updates: Partial<Pick<RegressionCase, 'name' | 'input' | 'expectedRuleIds'>>): void {
+    const project = this.state.project;
+    if (!project) return;
+    const regressionCases = project.regressionCases.map((testCase) => testCase.id === caseId ? { ...testCase, ...updates } : testCase);
+    this.commitProject({ ...project, regressionCases }, '回归用例已更新', { recheck: false });
+  }
+
+  removeRegressionCase(caseId: string): void {
+    const project = this.state.project;
+    if (!project) return;
+    this.commitProject({ ...project, regressionCases: project.regressionCases.filter((testCase) => testCase.id !== caseId) }, '已删除回归用例', { recheck: false });
+  }
+
+  /** 把某次运行的实际命中结果固化为该用例新的期望（“接受新结果”）。 */
+  acceptRegressionResult(caseId: string): void {
+    const result = this.state.regressionReport?.results.find((item) => item.caseId === caseId);
+    const project = this.state.project;
+    if (!project || !result || result.outcome === 'invalid-input') return;
+    this.updateRegressionCase(caseId, { expectedRuleIds: result.currentRuleIds });
+  }
+
+  runRegression(): void {
+    const project = this.state.project;
+    if (!project) return;
+    const report = runRegressionSuite(project);
+    const notice = report.total === 0
+      ? '还没有回归用例'
+      : report.invalid > 0
+        ? `回归完成：${report.unchanged} 组一致 · ${report.changed + report.noMatch} 组命中变化 · ${report.invalid} 组输入不合法`
+        : report.changed + report.noMatch === 0
+          ? `回归通过：${report.unchanged} 组用例全部与记录一致`
+          : `回归发现变化：${report.changed} 组命中规则改变 · ${report.noMatch} 组变为无规则命中`;
+    this.updateView({ regressionReport: report, notice });
+  }
+
   async runCheck(): Promise<void> {
     const project = this.state.project;
     if (!project) return;
@@ -159,7 +219,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
     if (!workspace) return;
     const project = createBlankProject(workspace.projects.length + 1);
     const next: WorkspaceDocument = { ...workspace, projects: [...workspace.projects, project], activeProjectId: project.id };
-    this.publish({ ...this.state, workspace: next, project, phase: 'validating', activeModule: 'fields', analysis: null, checkStatus: 'idle', validationIssues: ruleDomain.validateProject(project), sampleEvaluation: evaluateSample(project, project.sampleInputs), selectedRuleId: undefined, notice: '空项目已创建。先定义字段，再添加规则。' });
+    this.publish({ ...this.state, workspace: next, project, phase: 'validating', activeModule: 'fields', analysis: null, checkStatus: 'idle', validationIssues: ruleDomain.validateProject(project), sampleEvaluation: evaluateSample(project, project.sampleInputs), regressionReport: null, selectedRuleId: undefined, notice: '空项目已创建。先定义字段，再添加规则。' });
     this.scheduleSave(next);
   }
 
@@ -170,7 +230,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
     this.cancelCheck();
     const next = { ...workspace, activeProjectId: projectId };
     const issues = ruleDomain.validateProject(project);
-    this.publish({ ...this.state, workspace: next, project, phase: issues.length ? 'validating' : 'editing', activeModule: 'inspection', checkStatus: issues.length ? 'idle' : 'scheduled', analysis: null, validationIssues: issues, sampleEvaluation: evaluateSample(project, project.sampleInputs), selectedRuleId: project.rules[0]?.id, notice: `已切换到“${project.title}”` });
+    this.publish({ ...this.state, workspace: next, project, phase: issues.length ? 'validating' : 'editing', activeModule: 'inspection', checkStatus: issues.length ? 'idle' : 'scheduled', analysis: null, validationIssues: issues, sampleEvaluation: evaluateSample(project, project.sampleInputs), regressionReport: project.regressionCases.length ? runRegressionSuite(project) : null, selectedRuleId: project.rules[0]?.id, notice: `已切换到“${project.title}”` });
     this.scheduleSave(next);
     if (!issues.length) this.scheduleCheck(80);
   }
@@ -205,11 +265,12 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
     const project: RuleProject = {
       id: makeId('project'), title: `${source.title} · ${version.name}副本`,
       fields: cloneData(version.fields), rules: cloneData(version.rules), sampleInputs: cloneData(version.sampleInputs),
+      regressionCases: [],
       versions: [], updatedAt: Date.now(),
     };
     const next = { ...workspace, projects: [...workspace.projects, project], activeProjectId: project.id };
     const issues = ruleDomain.validateProject(project);
-    this.publish({ ...this.state, workspace: next, project, phase: issues.length ? 'validating' : 'editing', activeModule: 'rules', checkStatus: issues.length ? 'idle' : 'scheduled', analysis: null, validationIssues: issues, sampleEvaluation: evaluateSample(project, project.sampleInputs), selectedRuleId: project.rules[0]?.id, notice: `已复制版本到项目“${project.title}”` });
+    this.publish({ ...this.state, workspace: next, project, phase: issues.length ? 'validating' : 'editing', activeModule: 'rules', checkStatus: issues.length ? 'idle' : 'scheduled', analysis: null, validationIssues: issues, sampleEvaluation: evaluateSample(project, project.sampleInputs), regressionReport: project.regressionCases.length ? runRegressionSuite(project) : null, selectedRuleId: project.rules[0]?.id, notice: `已复制版本到项目“${project.title}”` });
     this.scheduleSave(next);
     if (!issues.length) this.scheduleCheck(80);
   }
@@ -221,7 +282,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
       const workspace = saved ?? createDemoWorkspace();
       const project = workspace.projects.find((candidate) => candidate.id === workspace.activeProjectId) ?? workspace.projects[0];
       const issues = ruleDomain.validateProject(project);
-      this.publish({ ...this.state, workspace, project, phase: issues.length ? 'validating' : 'editing', persistence: saved ? 'saved' : 'saving', activeModule: 'inspection', checkStatus: issues.length ? 'idle' : 'scheduled', validationIssues: issues, analysis: null, sampleEvaluation: evaluateSample(project, project.sampleInputs), selectedRuleId: project.rules[0]?.id, notice: saved ? '已从本地恢复最近项目' : '已载入演示项目，可直接修改并检查规则' });
+      this.publish({ ...this.state, workspace, project, phase: issues.length ? 'validating' : 'editing', persistence: saved ? 'saved' : 'saving', activeModule: 'inspection', checkStatus: issues.length ? 'idle' : 'scheduled', validationIssues: issues, analysis: null, sampleEvaluation: evaluateSample(project, project.sampleInputs), regressionReport: project.regressionCases.length ? runRegressionSuite(project) : null, selectedRuleId: project.rules[0]?.id, notice: saved ? '已从本地恢复最近项目' : '已载入演示项目，可直接修改并检查规则' });
       if (saved) this.scheduleCheck(40);
       else {
         this.scheduleSave(workspace);
@@ -248,6 +309,7 @@ export class RuleWorkspaceViewModel implements WorkspacePort {
       checkStatus: issues.length ? 'idle' : recheck ? 'scheduled' : this.state.checkStatus,
       analysis: recheck ? null : this.state.analysis,
       sampleEvaluation: evaluateSample(updated, updated.sampleInputs),
+      regressionReport: updated.regressionCases.length ? runRegressionSuite(updated) : null,
       selectedRuleId: updated.rules.some((rule) => rule.id === this.state.selectedRuleId) ? this.state.selectedRuleId : updated.rules[0]?.id,
       notice,
     });

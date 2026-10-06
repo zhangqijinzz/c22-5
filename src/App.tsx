@@ -4,6 +4,7 @@ import { FieldsView } from './features/fields/FieldsView';
 import { RulesView } from './features/rules/RulesView';
 import { SamplesView } from './features/samples/SamplesView';
 import { InspectionView } from './features/inspection/InspectionView';
+import { RegressionView } from './features/regression/RegressionView';
 import { createRuleWeaveViewModels } from './viewmodels/createRuleWeaveViewModels';
 import './styles.css';
 
@@ -12,11 +13,12 @@ const navigation: { id: ModuleId; label: string; description: string; icon: stri
   { id: 'rules', label: '规则工作台', description: '条件与决策结果', icon: '⌘', step: '02' },
   { id: 'samples', label: '样例试验区', description: '单点命中推演', icon: '◉', step: '03' },
   { id: 'inspection', label: '检查与版本', description: '覆盖、冲突与快照', icon: '⌕', step: '04' },
+  { id: 'regression', label: '回归集合', description: '固化输入与命中基线', icon: '⚑', step: '05' },
 ];
 
 export default function App() {
   const [viewModels] = useState(createRuleWeaveViewModels);
-  const { workspace, fields, rules, samples, inspection } = viewModels;
+  const { workspace, fields, rules, samples, inspection, regression } = viewModels;
   const state = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot, workspace.getSnapshot);
   const project = state.project;
   const activeNavigation = navigation.find((item) => item.id === state.activeModule) ?? navigation[0];
@@ -63,6 +65,7 @@ export default function App() {
             {state.activeModule === 'rules' && <RulesView state={state} viewModel={rules} />}
             {state.activeModule === 'samples' && <SamplesView state={state} viewModel={samples} />}
             {state.activeModule === 'inspection' && <InspectionView state={state} viewModel={inspection} onOpenRule={openRule} />}
+            {state.activeModule === 'regression' && <RegressionView state={state} viewModel={regression} />}
           </div>
         </div>}
         {!project && <div className="startup-state"><div className="spinner" /><strong>正在加载 RuleWeave</strong><span>读取本地项目与版本快照</span></div>}

@@ -1,4 +1,4 @@
-import type { BusinessRule, RuleField, RuleProject, RuleVersion, WorkspaceDocument } from '../models/ruleModel';
+import type { BusinessRule, RegressionCase, RuleField, RuleProject, RuleVersion, WorkspaceDocument } from '../models/ruleModel';
 import { defaultSample } from '../domain/conditionEvaluator';
 import { ProjectStorageService } from '../services/projectStorageService';
 
@@ -35,17 +35,31 @@ function decodeProject(value: unknown): RuleProject | null {
   const versionsValue = Array.isArray(value.versions) ? value.versions : [];
   const versions = versionsValue.filter(isRuleVersion);
   if (versions.length !== versionsValue.length) return null;
+  // 旧版本工作区没有回归集合字段，缺省视为空集合；单条结构损坏的用例直接丢弃，不拖垮整个工作区。
+  const regressionCasesValue = Array.isArray(value.regressionCases) ? value.regressionCases : [];
+  const regressionCases = regressionCasesValue.filter(isRegressionCase);
   const project: RuleProject = {
     id: value.id,
     title: value.title,
     fields,
     rules,
     sampleInputs: isRecord(value.sampleInputs) ? value.sampleInputs as RuleProject['sampleInputs'] : defaultSample(fields),
+    regressionCases,
     versions,
     updatedAt: value.updatedAt,
   };
   if (typeof value.frozenVersionId === 'string') project.frozenVersionId = value.frozenVersionId;
   return project;
+}
+
+function isRegressionCase(value: unknown): value is RegressionCase {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.createdAt === 'number'
+    && isRecord(value.input)
+    && Array.isArray(value.expectedRuleIds)
+    && value.expectedRuleIds.every((id) => typeof id === 'string');
 }
 
 function isRuleField(value: unknown): value is RuleField {

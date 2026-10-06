@@ -14,10 +14,16 @@ export class FieldsViewModel {
       : type === 'enum'
         ? { id: makeId('field'), name: `枚举字段 ${ordinal}`, type, enumValues: ['选项 A', '选项 B'] }
         : { id: makeId('field'), name: `布尔字段 ${ordinal}`, type };
+    const nextCases = project.regressionCases.map((testCase) => ({
+      ...testCase,
+      // 新增字段在旧用例里先留空，回归运行时会明确提示“缺少字段值”，而不是静默塞默认值。
+      input: { ...testCase.input, [field.id]: '' },
+    }));
     this.workspace.commitProject({
       ...project,
       fields: [...project.fields, field],
       sampleInputs: { ...defaultSample(project.fields), ...project.sampleInputs, ...defaultSample([field]) },
+      regressionCases: nextCases,
     }, `已添加字段“${field.name}”`);
   }
 
@@ -39,7 +45,13 @@ export class FieldsViewModel {
     }
     const sampleInputs = { ...project.sampleInputs };
     delete sampleInputs[fieldId];
-    this.workspace.commitProject({ ...project, fields: project.fields.filter((candidate) => candidate.id !== fieldId), sampleInputs }, `已删除字段“${field.name}”`);
+    const regressionCases = project.regressionCases.map((testCase) => {
+      if (!(fieldId in testCase.input)) return testCase;
+      const input = { ...testCase.input };
+      delete input[fieldId];
+      return { ...testCase, input };
+    });
+    this.workspace.commitProject({ ...project, fields: project.fields.filter((candidate) => candidate.id !== fieldId), sampleInputs, regressionCases }, `已删除字段“${field.name}”`);
     return true;
   }
 

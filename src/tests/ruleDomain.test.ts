@@ -13,7 +13,7 @@ function makeRule(id: string, conditions: BusinessRule['conditions'], priority =
 }
 
 function project(rules: BusinessRule[], fields: RuleField[] = [amount, tier, active]): RuleProject {
-  return { id: 'p', title: '测试项目', fields, rules, sampleInputs: {}, versions: [], updatedAt: 1 };
+  return { id: 'p', title: '测试项目', fields, rules, sampleInputs: {}, regressionCases: [], versions: [], updatedAt: 1 };
 }
 
 const amountAtLeast = (value: number): BusinessRule['conditions'] => ({ kind: 'group', operator: 'and', conditions: [{ kind: 'predicate', fieldId: 'amount', operator: 'gte', value }] });
